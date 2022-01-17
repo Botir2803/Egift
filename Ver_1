@@ -1,0 +1,135 @@
+import pandas as pd
+import numpy as np
+
+# This file is sent by AVBO or Data team
+egift=pd.read_csv('egift dec.csv')
+
+#The below files will be made available in Gsheet 
+denom=pd.read_csv('Monthly Switching Denom dec.csv')
+mapping_payment_type=pd.read_excel('mapping payment type.xlsx')
+mapping_client=pd.read_excel('mapping client.xlsx')
+mapping_item=pd.read_excel('mapping item.xlsx')
+
+# Remove duplicates from Denom data to eliminate same egift codes
+denom.drop_duplicates(subset ="Egift Code",keep = 'first', inplace = True)
+
+# Create 2nd denom file to vlookup against main file on Egift code
+denom_2=denom['Egift Code']
+denom_2 = pd.DataFrame(data=denom_2, columns=['Egift Code'])
+egift=pd.merge(egift,denom_2.astype(str),on='Egift Code',how='left',indicator=True)
+
+
+# Create a Switching denom column and return 'Y' for all matching values with denom file
+egift['Switching Denom']=np.where(egift['_merge']=='both','Y','')
+egift.drop(['_merge'], axis = 1,inplace=True)
+
+# Create Final Price column and return the amounts from Denom file based on egift code
+
+denom_3=denom[['Egift Code','Amount']]
+denom_3 = pd.DataFrame(data=denom_3, columns=['Egift Code','Amount'])
+egift=pd.merge(egift,denom_3.astype(str),on='Egift Code',how='left')
+
+egift = egift.rename({'Amount': 'Final Price'}, axis=1).fillna("")
+egift['Final Price']=np.where(egift['Final Price']=="",egift['Denom'],egift['Final Price'])
+
+#Create Quantity column and divide denom with price
+egift['Qty']=egift['Denom'].replace([""],0).astype(float) / egift['Final Price'].replace([""],0).astype(float)
+
+#Create Subtotal column and multiply Qty by price
+egift['Subtotal']=egift['Qty'] * egift['Final Price'].replace([""],0).astype(float)
+
+# Compare Vendor vs Issuer columns, if values same return `True`
+ref=[]
+for vendor, issuer in zip(egift['Vendor'],egift['Issuer']):
+    if vendor==issuer:
+        ref.append(True)
+    else:
+        ref.append(False)
+        
+egift['Vendor=Issuer']=ref
+
+# Create Issuer x Payment Type column and concatenate Issuer column with Payment type
+egift['Issuer x Payment Type']=egift['Issuer']+' '+egift['Payment Type']
+
+# Look up IssuerXPayment type column with mapping file
+
+mapping_payment_type_1=mapping_payment_type[['issuer x payment type','Exp/Rev','Redeemed from','Payment Type',
+                                             'Revenue/Expense booked by']]
+mapping_payment_type_1 = pd.DataFrame(data=mapping_payment_type_1, columns=['issuer x payment type','Exp/Rev','Redeemed from','Payment Type',
+                                             'Revenue/Expense booked by'])
+mapping_payment_type_1 = mapping_payment_type_1.rename({'issuer x payment type': 'Issuer x Payment Type'}, axis=1).fillna("")
+egift=pd.merge(egift,mapping_payment_type_1,on='Issuer x Payment Type',how='left')
+
+### Populating Final Status column ###
+
+# `billed` #
+# `expense` #
+# `delete` #
+# `recheck` #
+
+#### 1. If egroup code Incomplete Relations: filled   => `recheck`
+#### 2. "If Vendor = Issuer: TRUE &Vendor/Issuer: Alfamart, Indomaret, Tokopedia, Blibli, H&M, Boga, Transmart, Grab, CT Corp" => `recheck`
+#### 3. if Vendor = Issuer: TRUE => `delete`
+#### 4. If Exp/Rev: Expense => `expense`
+#### 5.  Other than exception above => `billed`
+
+
+final_status=[]
+
+for egroup,vendor_issuer,vendor,issuer,exp_rev in zip(egift['Egroup Code Incomplete Relations'],
+                                                     egift['Vendor=Issuer'],
+                                                     egift['Vendor'],egift['Issuer'],
+                                                     egift['Exp/Rev']):
+    if egroup!='':
+        final_status.append('recheck')
+    elif vendor_issuer:
+        final_status.append('delete')
+    elif vendor_issuer and vendor=='Alfamart':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='Indomaret':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='Tokopedia':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='BliBli':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='H&M':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='BOGA GROUP':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='Transmart Carrefour':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='Grab':
+        final_status.append('recheck')
+    elif vendor_issuer and vendor=='CT Corp':
+        final_status.append('recheck')
+    elif exp_rev=='expense' or exp_rev=='Expense':
+        final_status.append('expense')
+    else:
+        final_status.append('billed')
+        
+        
+egift['Final Status']=final_status
+
+# Populate Notes_y column
+egift['Notes_y']=np.where(egift['Issuer']=='PT Aksi Visitama',' Check Bussan to MOL using Order No (if any)','')
+egift['Notes_y']=np.where(egift['Issuer']=='Allianz','PIC',egift['Notes_y'])
+
+
+# Mapping client name from the mapping file and populating in egift file
+mapping_client=mapping_client[['Client','Contact Name']]
+mapping_client = mapping_client.rename({'Client': 'Issuer'}, axis=1).fillna("")
+egift=pd.merge(egift,mapping_client,on='Issuer',how='left')
+
+
+# Mapping item name from the mapping file and populating in egift file
+egift['Vendor x Egift Name']=egift['Vendor']+' '+egift['Egift Name']
+mapping_item=mapping_item[['Vendor x Egift Name','Item Description']]
+egift=pd.merge(egift,mapping_item,on='Vendor x Egift Name',how='left')
+
+### SAVE THE FILE ###
+
+egift.to_csv('egift_test dec-1.csv')
+
+
+
+  
