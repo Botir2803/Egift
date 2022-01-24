@@ -51,6 +51,8 @@ egift['Vendor=Issuer']=ref
 # Create Issuer x Payment Type column and concatenate Issuer column with Payment type
 egift['Issuer x Payment Type']=egift['Issuer']+' '+egift['Payment Type']
 
+egift['Issuer x Payment Type']=egift['Issuer x Payment Type'].str.strip()
+
 # Look up IssuerXPayment type column with mapping file
 
 mapping_payment_type_1=mapping_payment_type[['issuer x payment type','Exp/Rev','Redeemed from','Payment Type',
@@ -58,6 +60,7 @@ mapping_payment_type_1=mapping_payment_type[['issuer x payment type','Exp/Rev','
 mapping_payment_type_1 = pd.DataFrame(data=mapping_payment_type_1, columns=['issuer x payment type','Exp/Rev','Redeemed from','Payment Type',
                                              'Revenue/Expense booked by'])
 mapping_payment_type_1 = mapping_payment_type_1.rename({'issuer x payment type': 'Issuer x Payment Type'}, axis=1).fillna("")
+mapping_payment_type_1['Issuer x Payment Type']=mapping_payment_type_1['Issuer x Payment Type'].str.strip()
 egift=pd.merge(egift,mapping_payment_type_1,on='Issuer x Payment Type',how='left')
 
 ### Populating Final Status column ###
